@@ -111,19 +111,25 @@ public:
         sqlite3_reset(insert_vector_query.get());
     }
 
-    void putVectorTable(int key,const Vec& vector,std::string table,std::string metadata = ""){
-        if (vector.size() != _vector_size){
-            std::cout<<"Catostrophic error. Vector size not the same on insert.";
-            return;
-        }
-        std::string sql = "INSERT INTO "+table+"(key,vector,metadata) VALUES("+std::to_string(key)+",'"+ convertToString(vector)+"','"+metadata+"')";
-        easyQuery(sql,NULL,NULL);
+    void putRandVector(){
+        Vec vector = Eigen::VectorXf::Random(_vector_size);
+        vector = vector/vector.norm();
+        uint16_t key = hashVector(vector.transpose(),hashMatrix);
+        Vec normalized_vector = vector/vector.norm();
+
+        sqlite3_bind_int(insert_vector_query.get(),1,key);
+        sqlite3_bind_blob(insert_vector_query.get(),2,normalized_vector.data(),sizeof(float)*_vector_size,SQLITE_TRANSIENT);
+        sqlite3_bind_text(insert_vector_query.get(),3,"",-1,SQLITE_TRANSIENT);
+        sqlite3_step(insert_vector_query.get());
+        sqlite3_reset(insert_vector_query.get());
     }
 
     int countVectors(int minKey, int maxKey){
-        std::string sql = "SELECT COUNT(*) FROM vectors WHERE key>="+std::to_string(minKey)+" AND key<="+std::to_string(maxKey);
-        std::unique_ptr<std::string> out = easyQuery(sql);
-        return std::stoi((*out));
+        sqlite3_bind_int(count_vector_query.get(),1,minKey);
+        sqlite3_bind_int(count_vector_query.get(),2,maxKey);
+        sqlite3_step(count_vector_query.get());
+        int out = sqlite3_column_int(count_vector_query.get(),0);
+        return out;
     }
 
     int countVectors(std::string table){
@@ -134,8 +140,10 @@ public:
 
     VectorQueryOutput fetchVectors(uint16_t minKey, uint16_t maxKey){
         VectorQueryOutput out = {_vector_size,std::make_unique<std::vector<TableRow>>()};
+
         sqlite3_bind_int(select_vector_query.get(),1,minKey);
         sqlite3_bind_int(select_vector_query.get(),2,maxKey);
+
         while(sqlite3_step(select_vector_query.get()) != SQLITE_DONE){
             int id = sqlite3_column_int(select_vector_query.get(),0);
             Vec v = convertToVecFromBLOB(sqlite3_column_blob(select_vector_query.get(),1),_vector_size);
@@ -183,6 +191,8 @@ public:
 
         return toGetSorted[toGetSorted.size()-1].row.vector;
     }
+
+    //this should be done with a queue
     std::vector<TableRow> fetchClosestVectors(const Vec& queryVector, int quantity){
         uint16_t query_hash = hashVector(queryVector,hashMatrix);
         //all 1's in binary
@@ -216,26 +226,6 @@ public:
 
 
         return return_list;
-    }
-
-    void beginInsertVectorBatch(){
-        sqlBatch = "INSERT INTO vectors (key, vector,metadata) VALUES";
-    }
-
-    void putVectorInBatch(const Vec& vector, std::string metadata = ""){
-        if (vector.size() != _vector_size){
-            std::cout<<"Catostrophic error. Vector size not the same on insert.";
-            return;
-        }
-        uint16_t key = hashVector(vector.transpose(),hashMatrix);
-        Vec normalized_vector = vector/vector.norm();
-        sqlBatch += "("+std::to_string(key)+",'"+ convertToString(normalized_vector)+"','"+metadata+"'),";
-    }
-
-    void endInsertVectorBatch(){
-        sqlBatch.pop_back();
-        sqlBatch+=";";
-        easyQuery(sqlBatch,NULL,NULL);
     }
 
 
@@ -282,9 +272,7 @@ private:
         if (countVectors("random_vectors")!= _random_vector_amount){
             std::cout<<countVectors("random_vectors");
             for (int i = 0; i < _random_vector_amount; i++) {
-                Vec rand = Eigen::VectorXf::Random(_vector_size);
-                rand = rand / rand.norm();
-                putVectorTable(i,rand,"random_vectors");
+                putRandVector();
             }
         }
     }
