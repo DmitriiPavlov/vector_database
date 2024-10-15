@@ -6,7 +6,7 @@
 #include <Eigen/Dense>
 
 //internal
-#include "queries.h"
+#include "database.h"
 #include "conversion.h"
 #include "locality_hashing.h"
 
@@ -16,14 +16,14 @@ int main(int argc, char** argv)
     Database* db = new Database("/Users/bison/Documents/Personal Projects/vectorDatabase/data/tryagain.db",1536);
 
 
-//    for (int j = 0; j < 100; j++) {
-//        db->beginInsertVectorBatch();
-//        for (int i = 0; i < 1000; i++) {
-//            Vec a = Eigen::VectorXf::Random(1536);
-//            db->putVectorInBatch(a, "");
-//        }
-//        db->endInsertVectorBatch();
-//    }
+    for (int j = 0; j < 100; j++) {
+        db->beginInsertVectorBatch();
+        for (int i = 0; i < 1000; i++) {
+            Vec a = Eigen::VectorXf::Random(1536);
+            db->putVectorInBatch(a, "");
+        }
+        db->endInsertVectorBatch();
+    }
 
 
 

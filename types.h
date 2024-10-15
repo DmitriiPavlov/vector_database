@@ -35,3 +35,11 @@ struct SortHelperStruct{
 };
 
 typedef struct SortHelperStruct SortHelperStruct ;
+
+struct SQLiteStmtDeleter {
+    void operator()(sqlite3_stmt* stmt) const {
+        sqlite3_finalize(stmt);
+    }
+};
+
+typedef std::unique_ptr<sqlite3_stmt, SQLiteStmtDeleter> musqlite3_query;
