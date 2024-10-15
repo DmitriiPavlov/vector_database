@@ -105,7 +105,7 @@ public:
         Vec normalized_vector = vector/vector.norm();
 
         sqlite3_bind_int(insert_vector_query.get(),1,key);
-        sqlite3_bind_text(insert_vector_query.get(),2,convertToString(normalized_vector).c_str(),-1,SQLITE_TRANSIENT);
+        sqlite3_bind_blob(insert_vector_query.get(),2,normalized_vector.data(),sizeof(float)*_vector_size,SQLITE_TRANSIENT);
         sqlite3_bind_text(insert_vector_query.get(),3,metadata.c_str(),-1,SQLITE_TRANSIENT);
         sqlite3_step(insert_vector_query.get());
         sqlite3_reset(insert_vector_query.get());
@@ -138,7 +138,7 @@ public:
         sqlite3_bind_int(select_vector_query.get(),2,maxKey);
         while(sqlite3_step(select_vector_query.get()) != SQLITE_DONE){
             int id = sqlite3_column_int(select_vector_query.get(),0);
-            Vec v = convertToVec(std::string(reinterpret_cast<const char*>(sqlite3_column_text(select_vector_query.get(),1))),_vector_size);
+            Vec v = convertToVecFromBLOB(sqlite3_column_blob(select_vector_query.get(),1),_vector_size);
             std::string meta = "";
             if (select_vector_query.get() != nullptr) {
                 meta = std::string(reinterpret_cast<const char *>(sqlite3_column_text(select_vector_query.get(), 2)));
@@ -262,7 +262,7 @@ private:
 
         std::string create_vectors_table_query = "CREATE TABLE IF NOT EXISTS vectors (\n"
                                                   "    key INT NOT NULL,\n"
-                                                  "    vector TEXT NOT NULL,\n"
+                                                  "    vector BLOB NOT NULL,\n"
                                                  "     metadata TEXT\n"
                                                   ");";
         easyQuery(create_vectors_table_query,NULL,NULL);

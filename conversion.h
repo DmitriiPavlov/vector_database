@@ -2,7 +2,7 @@
 //builtin
 #include <string>
 //external
-
+#include <Eigen/Dense>
 //internal
 #include "types.h"
 
@@ -33,3 +33,10 @@ Vec convertToVec(std::string str, int size){
     }
     return out;
 }
+
+Vec convertToVecFromBLOB(const void * blobPointer, int vec_size){
+    Vec outVec(vec_size);
+    std::memcpy(outVec.data(),blobPointer,sizeof(float)*vec_size);
+    return outVec;
+}
+
