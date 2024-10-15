@@ -104,9 +104,9 @@ public:
         uint16_t key = hashVector(vector.transpose(),hashMatrix);
         Vec normalized_vector = vector/vector.norm();
 
-        sqlite3_bind_int(insert_vector_query.get(),0,key);
-        sqlite3_bind_text(insert_vector_query.get(),1,convertToString(normalized_vector).c_str(),-1,NULL);
-        sqlite3_bind_text(insert_vector_query.get(),2,metadata.c_str(),-1,NULL);
+        sqlite3_bind_int(insert_vector_query.get(),1,key);
+        sqlite3_bind_text(insert_vector_query.get(),2,convertToString(normalized_vector).c_str(),-1,SQLITE_TRANSIENT);
+        sqlite3_bind_text(insert_vector_query.get(),3,metadata.c_str(),-1,SQLITE_TRANSIENT);
         sqlite3_step(insert_vector_query.get());
         sqlite3_reset(insert_vector_query.get());
     }
@@ -133,10 +133,20 @@ public:
     }
 
     VectorQueryOutput fetchVectors(uint16_t minKey, uint16_t maxKey){
-        std::string sql = "SELECT * FROM vectors WHERE key>="+std::to_string(minKey)+" AND key<="+std::to_string(maxKey);
-        VectorQueryOutput output = {_vector_size,std::make_unique<std::vector<TableRow>>()};
-        easyQuery(sql,fetchVectorsCallback,&output);
-        return output;
+        VectorQueryOutput out = {_vector_size,std::make_unique<std::vector<TableRow>>()};
+        sqlite3_bind_int(select_vector_query.get(),1,minKey);
+        sqlite3_bind_int(select_vector_query.get(),2,maxKey);
+        while(sqlite3_step(select_vector_query.get()) != SQLITE_DONE){
+            int id = sqlite3_column_int(select_vector_query.get(),0);
+            Vec v = convertToVec(std::string(reinterpret_cast<const char*>(sqlite3_column_text(select_vector_query.get(),1))),_vector_size);
+            std::string meta = "";
+            if (select_vector_query.get() != nullptr) {
+                meta = std::string(reinterpret_cast<const char *>(sqlite3_column_text(select_vector_query.get(), 2)));
+            }
+            TableRow new_row = {id,v,};
+            out.rowList->push_back(new_row);
+        }
+        return out;
     }
 
     VectorQueryOutput fetchRandomVectors(){
