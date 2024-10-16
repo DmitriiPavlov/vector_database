@@ -242,7 +242,9 @@ public:
         SortHelperStruct currStruct;
         for (int hamming_distance = 0; hamming_distance < 4; hamming_distance ++){
             musqlite3_batched_query_wrraper query_wrapper = {select_16CN_vectors_query[hamming_distance],0};
-            populate_query(query_wrapper,query_key,0,hamming_distance,0);
+            for (const uint16_t& op : op_variations_16CN[hamming_distance]){
+                query_wrapper.bind(op^query_key);
+            }
             while (sqlite3_step(query_wrapper.wrapped_query.get()) == SQLITE_ROW){
                 currRow = getRowFromStep(query_wrapper.wrapped_query);
                 currStruct = {currRow.vector.dot(queryVector),currRow};
@@ -408,6 +410,7 @@ private:
             }
         }
         sql_text += ");";
+        std::cout<<sql_text;
         initSqlQuery(sql_text.c_str(), query);
     }
 
