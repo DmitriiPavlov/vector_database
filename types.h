@@ -43,3 +43,12 @@ struct SQLiteStmtDeleter {
 };
 
 typedef std::unique_ptr<sqlite3_stmt, SQLiteStmtDeleter> musqlite3_query;
+
+struct musqlite3_batched_query_wrraper{
+    musqlite3_query & wrapped_query;
+    int index = 0;
+    void bind(uint16_t key){
+        sqlite3_bind_int(wrapped_query.get(),index,key);
+        index++;
+    }
+};

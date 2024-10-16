@@ -77,6 +77,8 @@ public:
 
     musqlite3_query select_metadata_query;
     musqlite3_query count_vector_query;
+
+    std::array<musqlite3_query, 4> select_16CN_vectors_query;
     //will create a Database if one doesn't exist
     explicit Database(const std::string& fileName, int vector_size = -1){
         _vector_size = vector_size;
@@ -183,7 +185,7 @@ public:
         }
 
         std::vector<SortHelperStruct> toGetSorted;
-        for (TableRow r : *output.rowList){
+        for (const TableRow& r : *output.rowList){
             SortHelperStruct e = {0,r};
             toGetSorted.push_back(e);
         }
@@ -228,6 +230,56 @@ public:
         return return_list;
     }
 
+    std::vector<TableRow> fetchNVectors(const Vec & queryVector, int N){
+        std::priority_queue<SortHelperStruct, std::vector<SortHelperStruct>,HeapComparator> queue{};
+        std::vector<TableRow> out_array(N);
+        uint16_t query_key = hashVector(queryVector,hashMatrix);
+        TableRow currRow;
+        SortHelperStruct currStruct;
+        for (int hamming_distance = 0; hamming_distance < 4; hamming_distance ++){
+            musqlite3_batched_query_wrraper query_wrapper = {select_16CN_vectors_query[hamming_distance],0};
+            populate_query(query_wrapper,query_key,0,hamming_distance,0);
+            while (sqlite3_step(query_wrapper.wrapped_query.get()) == SQLITE_ROW){
+                currRow = getRowFromStep(query_wrapper.wrapped_query);
+                currStruct = {currRow.vector.dot(queryVector),currRow};
+                if (queue.size() == N){
+                    if (queue.top().cosineIndex < currStruct.cosineIndex){
+                        queue.pop();
+                        queue.push(currStruct);
+                    }
+                }
+                else{
+                    queue.push(currStruct);
+                }
+            }
+
+            if (queue.size() == N){
+                break;
+            }
+        }
+
+        for (int i = N-1; i >= 0; i--){
+            out_array[i] = (queue.top().row);
+            queue.top();
+            queue.pop();
+        }
+
+        return out_array;
+    }
+
+    void populate_query(musqlite3_batched_query_wrraper & query,const uint16_t & query_key, int min, int depth, uint16_t op){
+        const std::array<uint16_t,16> ops = createOpsArray();
+        if (depth == 0){
+            //insert op into array
+            query.bind(query_key|op);
+            return;
+        }
+
+        int max = 16-depth+1;
+        for (int i = min; i <= max; i++){
+            populate_query(query,query_key,i+1,depth-1,op|ops[i]);
+        }
+    }
 
 
 private:
@@ -330,11 +382,37 @@ private:
         initSqlQuery("SELECT * FROM rand_vectors",fetch_all_rand_vector_query);
         initSqlQuery("INSERT INTO vectors(key,vector,metadata) VALUES(?,?,?)",insert_vector_query);
         initSqlQuery("SELECT COUNT(*) FROM vectors WHERE key>=? AND key<=?",count_vector_query);
+
+        for (int i = 0; i < 4; i++){
+             create16CN_query(select_16CN_vectors_query[i], i);
+        }
     }
 
     void initSqlQuery(const char * sql, musqlite3_query& query){
         sqlite3_stmt * raw_query;
         sqlite3_prepare_v2(db,sql,-1,&raw_query,nullptr);
         query = musqlite3_query(raw_query);
+    }
+
+    void create16CN_query(musqlite3_query& query,int n){
+        std::string sql_text = "SELECT * FROM vectors WHERE key IN (";
+        int options = combi(16,n);
+        for (int i = 0; i < options; ++i) {
+            sql_text += "?";
+            if (i < options - 1) {
+                sql_text += ", ";
+            }
+        }
+        sql_text += ");";
+        initSqlQuery(sql_text.c_str(), query);
+    }
+
+    TableRow getRowFromStep(const musqlite3_query & query){
+        int id = sqlite3_column_int(query.get(),0);
+        Vec v = convertToVecFromBLOB(sqlite3_column_blob(query.get(),1),_vector_size);
+        std::string meta = "";
+        meta = std::string(reinterpret_cast<const char *>(sqlite3_column_text(query.get(), 2)));
+        TableRow new_row = {id,v,};
+        return new_row;
     }
 };

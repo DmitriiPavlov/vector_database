@@ -40,6 +40,12 @@ inline bool compareVecs(SortHelperStruct a, SortHelperStruct b){
     return a.cosineIndex < b.cosineIndex;
 }
 
+struct HeapComparator{
+    bool operator()(const SortHelperStruct& a, const SortHelperStruct& b){
+        return a.cosineIndex > b.cosineIndex;
+    }
+};
+
 //sorthelperstruct doesn't need to have the cosine index initalized
 void sortOnCosineSimilarity(std::vector<SortHelperStruct> * list, Vec queryVector){
 
@@ -53,6 +59,36 @@ void sortOnCosineSimilarity(std::vector<SortHelperStruct> * list, Vec queryVecto
 void printBinary(uint16_t num){
     std::bitset<16>a(num);
     std::cout<<a<<std::endl;
+}
+
+constexpr std::array<uint16_t, 16> createOpsArray(){
+    std::array<uint16_t,16> out = std::array<uint16_t,16>();
+    for (int i = 0; i < 16; i++){
+        out[i] = 1<<i;
+    }
+    return out;
+}
+
+long combi(int n,int k)
+{
+    long ans=1;
+    k=k>n-k?n-k:k;
+    int j=1;
+    for(;j<=k;j++,n--)
+    {
+        if(n%j==0)
+        {
+            ans*=n/j;
+        }else
+        if(ans%j==0)
+        {
+            ans=ans/j*n;
+        }else
+        {
+            ans=(ans*n)/j;
+        }
+    }
+    return ans;
 }
 
 
