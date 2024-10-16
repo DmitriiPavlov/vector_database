@@ -69,6 +69,8 @@ public:
     std::string sqlBatch;
     int average_match_index = 0;
 
+    const std::array<uint16_t,16> ops = createOpsArray();
+
     musqlite3_query insert_vector_query;
     musqlite3_query select_vector_query;
 
@@ -79,6 +81,7 @@ public:
     musqlite3_query count_vector_query;
 
     std::array<musqlite3_query, 4> select_16CN_vectors_query;
+    std::array<std::vector<uint16_t>,4> op_variations_16CN;
     //will create a Database if one doesn't exist
     explicit Database(const std::string& fileName, int vector_size = -1){
         _vector_size = vector_size;
@@ -89,6 +92,7 @@ public:
         validateTables();
         ensureCorrectVectorSize(vector_size);
         loadHashMatrix();
+        generateOpLists();
     }
 
     ~Database(){
@@ -267,8 +271,8 @@ public:
         return out_array;
     }
 
+
     void populate_query(musqlite3_batched_query_wrraper & query,const uint16_t & query_key, int min, int depth, uint16_t op){
-        const std::array<uint16_t,16> ops = createOpsArray();
         if (depth == 0){
             //insert op into array
             query.bind(query_key|op);
@@ -277,7 +281,7 @@ public:
 
         int max = 16-depth+1;
         for (int i = min; i <= max; i++){
-            populate_query(query,query_key,i+1,depth-1,op|ops[i]);
+            populate_query(query,query_key,i+1,depth-1,op^ops[i]);
         }
     }
 
@@ -414,5 +418,12 @@ private:
         meta = std::string(reinterpret_cast<const char *>(sqlite3_column_text(query.get(), 2)));
         TableRow new_row = {id,v,};
         return new_row;
+    }
+
+    void generateOpLists(){
+        for (int i = 0; i < op_variations_16CN.size(); i++){
+            op_variations_16CN[i] = generate_16CN_operations(ops,i);
+            std::cout<<op_variations_16CN[i].size()<<"\n";
+        }
     }
 };

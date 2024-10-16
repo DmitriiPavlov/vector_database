@@ -69,6 +69,34 @@ constexpr std::array<uint16_t, 16> createOpsArray(){
     return out;
 }
 
+std::vector<uint16_t> generate_16CN_operations(const std::array<uint16_t,16>& ops,int n){
+    std::vector<uint16_t> unfiltered_out;
+    std::vector<uint16_t> newVec;
+    unfiltered_out.push_back(0);
+    for (int i = 0; i < n; i++){
+        int start_size = unfiltered_out.size();
+        for (uint16_t op : ops){
+            for (int j = 0; j<start_size; j++){
+                //we want to check whether any of the bits are already "turned on"
+                //if we AND the bits together, and we get 0, that means there's no crossover, and we should add this brand-new operation
+                if ((unfiltered_out[j]&op) == 0) {
+                    newVec.push_back(unfiltered_out[j] ^ op);
+                }
+            }
+        }
+        unfiltered_out = newVec;
+        newVec.clear();
+    }
+    std::vector<uint16_t> out;
+    for (uint16_t op : unfiltered_out){
+        auto index = std::find(out.begin(), out.end(), op);
+        if (index == out.end()){
+            out.push_back(op);
+        }
+    }
+    return out;
+}
+
 long combi(int n,int k)
 {
     long ans=1;
