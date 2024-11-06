@@ -52,3 +52,14 @@ struct musqlite3_batched_query_wrraper{
         sqlite3_bind_int(wrapped_query.get(),index,key);
     }
 };
+
+struct fetch_query_output{
+    bool success;
+    std::vector<TableRow> result;
+};
+
+struct insert_query_input{
+    std::string metadata;
+    Vec vector;
+};
+typedef struct insert_query_input insert_query_input;

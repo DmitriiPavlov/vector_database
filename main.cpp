@@ -10,7 +10,6 @@
 #include "conversion.h"
 #include "locality_hashing.h"
 
-
 int main(int argc, char** argv)
 {
     Database* db = new Database("/Users/bison/Documents/Personal Projects/vectorDatabase/data/tryagain.db",1536);
@@ -21,23 +20,28 @@ int main(int argc, char** argv)
 //            std::cout<<"Ten thousand inserts.\n";
 //        }
 //        Vec a = Eigen::VectorXf::Random(1536);
-//        db->putVector(a,"");
+//        db->insertVector(a,"");
 //    }
 
 //
-//    std::cout<<db->countVectors(0,70356);
+    std::cout<<db->countVectors(0,70356);
     Vec search =  Eigen::VectorXf::Random(1536);
     search = search/search.norm();
-    std::vector<TableRow> result;
+    fetch_query_output output;
+
     for (int i = 0; i < 1000; i ++){
-        result = db->fetchNVectors(search,10);
+        output = db->fetchNVectors(search,2);
     }
-//    for (int i = 0; i < 100; i++){
-//        TableRow row = result[i];
-//        std::cout<<row.vector<<std::endl;
-//        std::cout<<row.id<<"\n";
-//        std::cout<<row.vector.dot(search)<<"\n";
-//    }
+    std::cout<<convertToJsonFromOutput(output);
+
+    insert_query_input trial = convertToInputFromJson("{\n"
+                                                      "    \"metadata\" : \"Trial Vec\",\n"
+                                                      "    \"vector\": [1.013,1.0141,0.41141]\n"
+                                                      "}",3);
+
+    std::cout<<trial.vector<<"\n";
+    std::cout<<trial.metadata;
+
     clock_t stop = clock();
     double elapsed = (double) (stop - start) / CLOCKS_PER_SEC;
     std::cout<<elapsed<<std::endl;

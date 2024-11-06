@@ -28,7 +28,7 @@ int printAll(void* data, int col_num, char** col_value, char** col_name){
 
 int writeOutput(void *data, int argc, char **argv, char **azColName) {
     // Cast the `data` pointer to a `std::string*` to store the results
-    std::string *resultStr = static_cast<std::string*>(data);
+    auto *resultStr = static_cast<std::string*>(data);
 
     // Loop through each column in the current row
     for (int i = 0; i < argc; i++) {
@@ -40,7 +40,6 @@ int writeOutput(void *data, int argc, char **argv, char **azColName) {
 
     return 0; // Returning 0 allows sqlite3_exec to continue processing
 }
-
 int fetchVectorsCallback(void * data, int argc, char **argv, char **azColName){
     VectorQueryOutput *result_list = static_cast<VectorQueryOutput*>(data);
     TableRow row = {};
@@ -102,19 +101,23 @@ public:
         }
     }
 
-    void putVector(const Vec& vector, std::string metadata = ""){
-        if (vector.size() != _vector_size){
+    void insertVector(const insert_query_input& in){
+        if (in.vector.size() != _vector_size){
             std::cout<<"Catostrophic error. Vector size not the same on insert.";
             return;
         }
-        uint16_t key = hashVector(vector.transpose(),hashMatrix);
-        Vec normalized_vector = vector/vector.norm();
+        uint16_t key = hashVector(in.vector.transpose(),hashMatrix);
+        Vec normalized_vector = in.vector/in.vector.norm();
 
         sqlite3_bind_int(insert_vector_query.get(),1,key);
         sqlite3_bind_blob(insert_vector_query.get(),2,normalized_vector.data(),sizeof(float)*_vector_size,SQLITE_TRANSIENT);
-        sqlite3_bind_text(insert_vector_query.get(),3,metadata.c_str(),-1,SQLITE_TRANSIENT);
+        sqlite3_bind_text(insert_vector_query.get(),3,in.metadata.c_str(),-1,SQLITE_TRANSIENT);
         sqlite3_step(insert_vector_query.get());
         sqlite3_reset(insert_vector_query.get());
+    }
+
+    void insertJSON(const std::string& json){
+        insertVector(convertToInputFromJson(json,_vector_size));
     }
 
     void putRandVector(){
@@ -138,113 +141,25 @@ public:
         return out;
     }
 
+
     int countVectors(std::string table){
         std::string sql = "SELECT COUNT(*) FROM "+table;
         std::unique_ptr<std::string> out = easyQuery(sql);
         return std::stoi((*out));
     }
 
-    VectorQueryOutput fetchVectors(uint16_t minKey, uint16_t maxKey){
-        VectorQueryOutput out = {_vector_size,std::make_unique<std::vector<TableRow>>()};
-
-        sqlite3_bind_int(select_vector_query.get(),1,minKey);
-        sqlite3_bind_int(select_vector_query.get(),2,maxKey);
-
-        while(sqlite3_step(select_vector_query.get()) != SQLITE_DONE){
-            int id = sqlite3_column_int(select_vector_query.get(),0);
-            Vec v = convertToVecFromBLOB(sqlite3_column_blob(select_vector_query.get(),1),_vector_size);
-            std::string meta = "";
-            if (select_vector_query.get() != nullptr) {
-                meta = std::string(reinterpret_cast<const char *>(sqlite3_column_text(select_vector_query.get(), 2)));
-            }
-            TableRow new_row = {id,v,};
-            out.rowList->push_back(new_row);
-        }
-        return out;
-    }
-
-    VectorQueryOutput fetchRandomVectors(){
-        std::string sql = "SELECT * FROM random_vectors";
-        VectorQueryOutput output = {_vector_size,std::make_unique<std::vector<TableRow>>()};
-        easyQuery(sql,fetchVectorsCallback,&output);
-        return output;
-    }
-
-    Vec fetchClosestVector(const Vec& queryVector){
-        uint16_t query_hash = hashVector(queryVector,hashMatrix);
-        //all 1's in binary
-        uint16_t largest_int16 = 65535;
-        VectorQueryOutput output;
-        for (int i = 0; i < 16; i++){
-            uint16_t current_query_hash_min = ((query_hash>>i)<<i);
-            uint16_t current_query_hash_max = current_query_hash_min + (largest_int16>>(16-i));
-
-            if (countVectors(current_query_hash_min,current_query_hash_max) > 0){
-                average_match_index += i;
-                std::cout<<"here";
-                output = fetchVectors(current_query_hash_min,current_query_hash_max);
-                break;
-            }
-
-        }
-
-        std::vector<SortHelperStruct> toGetSorted;
-        for (const TableRow& r : *output.rowList){
-            SortHelperStruct e = {0,r};
-            toGetSorted.push_back(e);
-        }
-        sortOnCosineSimilarity(&toGetSorted,queryVector);
-
-        return toGetSorted[toGetSorted.size()-1].row.vector;
-    }
-
-    //this should be done with a queue
-    std::vector<TableRow> fetchClosestVectors(const Vec& queryVector, int quantity){
-        uint16_t query_hash = hashVector(queryVector,hashMatrix);
-        //all 1's in binary
-        uint16_t largest_int16 = 65535;
-        VectorQueryOutput output;
-        for (int i = 0; i < 16; i++){
-            uint16_t current_query_hash_min = ((query_hash>>i)<<i);
-            uint16_t current_query_hash_max = current_query_hash_min + (largest_int16>>(16-i));
-
-            if (countVectors(current_query_hash_min,current_query_hash_max) >= quantity){
-                average_match_index += i;
-                output = fetchVectors(current_query_hash_min,current_query_hash_max);
-                break;
-            }
-
-        }
-
-        std::vector<SortHelperStruct> toGetSorted;
-        for (TableRow r : *output.rowList){
-            SortHelperStruct e = {0,r};
-            toGetSorted.push_back(e);
-        }
-        sortOnCosineSimilarity(&toGetSorted,queryVector);
-
-        std::vector<TableRow> return_list;
-
-        for (int i = 0; i < quantity; i++){
-            return_list.push_back(toGetSorted[toGetSorted.size()-i-1].row);
-        }
-
-
-
-        return return_list;
-    }
-
-    std::vector<TableRow> fetchNVectors(const Vec & queryVector, int N){
+    fetch_query_output fetchNVectors(const Vec & queryVector, int N){
         std::priority_queue<SortHelperStruct, std::vector<SortHelperStruct>,HeapComparator> queue{};
         std::vector<TableRow> out_array(N);
         uint16_t query_key = hashVector(queryVector,hashMatrix);
         TableRow currRow;
         SortHelperStruct currStruct;
+
         for (int hamming_distance = 0; hamming_distance < 4; hamming_distance ++){
+            std::vector<TableRow> query_result;
             musqlite3_batched_query_wrraper query_wrapper = {select_16CN_vectors_query[hamming_distance],0};
-            for (const uint16_t& op : op_variations_16CN[hamming_distance]){
-                query_wrapper.bind(op^query_key);
-            }
+            bind_query_params(query_wrapper,op_variations_16CN[hamming_distance],query_key);
+
             while (sqlite3_step(query_wrapper.wrapped_query.get()) == SQLITE_ROW){
                 currRow = getRowFromStep(query_wrapper.wrapped_query);
                 currStruct = {currRow.vector.dot(queryVector),currRow};
@@ -264,15 +179,34 @@ public:
             }
         }
 
+        if (queue.size() != N){
+            return {false,out_array};
+        }
         for (int i = N-1; i >= 0; i--){
             out_array[i] = (queue.top().row);
             queue.top();
             queue.pop();
         }
 
-        return out_array;
+        return {true,out_array};
     }
 
+    Vec ez_query(const Vec& queryVector){
+        return fetchNVectors(queryVector,1).result[0].vector;
+    }
+
+
+    void read_query_output(musqlite3_query & query, std::vector<TableRow> & output){
+        while (sqlite3_step(query.get()) == SQLITE_ROW){
+            output.push_back(getRowFromStep(query));
+        }
+    }
+
+    void bind_query_params(musqlite3_batched_query_wrraper & query, const std::vector<uint16_t> operations, const uint16_t & query_key){
+        for (const uint16_t & op : operations){
+            query.bind(query_key^op);
+        }
+    }
 
     void populate_query(musqlite3_batched_query_wrraper & query,const uint16_t & query_key, int min, int depth, uint16_t op){
         if (depth == 0){
@@ -292,6 +226,13 @@ private:
     void loadHashMatrix(){
         VectorQueryOutput vecs = fetchRandomVectors();
         hashMatrix = composeHashMatrix(*vecs.rowList);
+    }
+
+    VectorQueryOutput fetchRandomVectors(){
+        std::string sql = "SELECT * FROM random_vectors";
+        VectorQueryOutput output = {_vector_size,std::make_unique<std::vector<TableRow>>()};
+        easyQuery(sql,fetchVectorsCallback,&output);
+        return output;
     }
 
     void openDatabase(const std::string & fileName){
@@ -410,7 +351,6 @@ private:
             }
         }
         sql_text += ");";
-        std::cout<<sql_text;
         initSqlQuery(sql_text.c_str(), query);
     }
 
@@ -419,14 +359,18 @@ private:
         Vec v = convertToVecFromBLOB(sqlite3_column_blob(query.get(),1),_vector_size);
         std::string meta = "";
         meta = std::string(reinterpret_cast<const char *>(sqlite3_column_text(query.get(), 2)));
-        TableRow new_row = {id,v,};
+        TableRow new_row = {id,v,meta};
         return new_row;
     }
 
     void generateOpLists(){
         for (int i = 0; i < op_variations_16CN.size(); i++){
             op_variations_16CN[i] = generate_16CN_operations(ops,i);
-            std::cout<<op_variations_16CN[i].size()<<"\n";
         }
     }
+
+
+
+
+
 };
