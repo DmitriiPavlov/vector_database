@@ -4,8 +4,8 @@
 #include <iostream>
 #include <format>
 //external
-#include <sqlite3.h>
-#include <Eigen/Dense>
+#include "sqlite3.h"
+#include "Eigen/Dense"
 
 //internal
 #include "types.h"
@@ -72,6 +72,7 @@ public:
 
     musqlite3_query insert_vector_query;
     musqlite3_query select_vector_query;
+    musqlite3_query select_all_vector_query;
 
     musqlite3_query insert_rand_vector_query;
     musqlite3_query fetch_all_rand_vector_query;
@@ -84,7 +85,7 @@ public:
     //will create a Database if one doesn't exist
     explicit Database(const std::string& fileName, int vector_size = -1){
         _vector_size = vector_size;
-
+        std::cout << sqlite3_libversion() << std::endl;
         openDatabase(fileName);
         initSqlQueries();
 
@@ -123,10 +124,9 @@ public:
     void putRandVector(){
         Vec vector = Eigen::VectorXf::Random(_vector_size);
         vector = vector/vector.norm();
-        uint16_t key = hashVector(vector.transpose(),hashMatrix);
         Vec normalized_vector = vector/vector.norm();
 
-        sqlite3_bind_int(insert_vector_query.get(),1,key);
+        sqlite3_bind_int(insert_vector_query.get(),1,0);
         sqlite3_bind_blob(insert_vector_query.get(),2,normalized_vector.data(),sizeof(float)*_vector_size,SQLITE_TRANSIENT);
         sqlite3_bind_text(insert_vector_query.get(),3,"",-1,SQLITE_TRANSIENT);
         sqlite3_step(insert_vector_query.get());
@@ -141,6 +141,9 @@ public:
         return out;
     }
 
+    int countVectors(){
+        return countVectors(0,65535);
+    }
 
     int countVectors(std::string table){
         std::string sql = "SELECT COUNT(*) FROM "+table;
@@ -180,15 +183,29 @@ public:
         }
 
         if (queue.size() != N){
-            return {false,out_array};
+            while (sqlite3_step(select_all_vector_query.get()) == SQLITE_ROW){
+                currRow = getRowFromStep(select_all_vector_query);
+                currStruct = {currRow.vector.dot(queryVector),currRow};
+                if (queue.size() == N){
+                    if (queue.top().cosineIndex < currStruct.cosineIndex){
+                        queue.pop();
+                        queue.push(currStruct);
+                    }
+                }
+                else{
+                    queue.push(currStruct);
+                }
+            }
+            sqlite3_reset(select_all_vector_query.get());
         }
-        for (int i = N-1; i >= 0; i--){
+        bool success = (queue.size()==N);
+        for (int i = queue.size()-1; i >= 0; i--){
             out_array[i] = (queue.top().row);
             queue.top();
             queue.pop();
         }
 
-        return {true,out_array};
+        return {success,out_array};
     }
 
     Vec ez_query(const Vec& queryVector){
@@ -225,6 +242,7 @@ public:
 private:
     void loadHashMatrix(){
         VectorQueryOutput vecs = fetchRandomVectors();
+
         hashMatrix = composeHashMatrix(*vecs.rowList);
     }
 
@@ -232,6 +250,7 @@ private:
         std::string sql = "SELECT * FROM random_vectors";
         VectorQueryOutput output = {_vector_size,std::make_unique<std::vector<TableRow>>()};
         easyQuery(sql,fetchVectorsCallback,&output);
+
         return output;
     }
 
@@ -258,7 +277,7 @@ private:
         easyQuery("CREATE INDEX IF NOT EXISTS idx_hash ON vectors(key);",NULL,NULL);
 
         std::string create_random_vectors_table_query = "CREATE TABLE IF NOT EXISTS random_vectors (\n"
-                                                 "    key INT NOT NULL,\n"
+                                                 "    key INT,\n"
                                                  "    vector TEXT NOT NULL,\n"
                                                  "     metadata TEXT\n"
                                                  ");";
@@ -271,9 +290,19 @@ private:
         if (countVectors("random_vectors")!= _random_vector_amount){
             std::cout<<countVectors("random_vectors");
             for (int i = 0; i < _random_vector_amount; i++) {
-                putRandVector();
+                Vec rand = Eigen::VectorXf::Random(_vector_size);
+                rand = rand / rand.norm();
+                putVectorTable(i,rand,"random_vectors");
             }
         }
+    }
+    void putVectorTable(int key,const Vec& vector,std::string table,std::string metadata = ""){
+        if (vector.size() != _vector_size){
+            std::cout<<"Catostrophic error. Vector size not the same on insert.";
+            return;
+        }
+        std::string sql = "INSERT INTO "+table+"(key,vector,metadata) VALUES("+std::to_string(key)+",'"+ convertToString(vector)+"','"+metadata+"')";
+        easyQuery(sql,NULL,NULL);
     }
 
     void ensureCorrectVectorSize(int vector_size){
@@ -326,6 +355,8 @@ private:
         initSqlQuery("INSERT INTO vectors(key,vector,metadata) VALUES(?,?,?)",insert_vector_query);
         initSqlQuery("INSERT INTO random_vectors(key,vector,metadata) VALUES(?,?,?)",insert_rand_vector_query);
         initSqlQuery("SELECT * FROM vectors WHERE key>=? AND key<=?",select_vector_query);
+        initSqlQuery("SELECT * FROM vectors",select_all_vector_query);
+
         initSqlQuery("SELECT * FROM rand_vectors",fetch_all_rand_vector_query);
         initSqlQuery("INSERT INTO vectors(key,vector,metadata) VALUES(?,?,?)",insert_vector_query);
         initSqlQuery("SELECT COUNT(*) FROM vectors WHERE key>=? AND key<=?",count_vector_query);
@@ -368,9 +399,4 @@ private:
             op_variations_16CN[i] = generate_16CN_operations(ops,i);
         }
     }
-
-
-
-
-
 };

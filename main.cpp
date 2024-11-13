@@ -6,31 +6,33 @@
 #include <Eigen/Dense>
 
 //internal
-#include "database.h"
-#include "conversion.h"
-#include "locality_hashing.h"
+#include "src/database.h"
+#include "src/conversion.h"
+#include "src/locality_hashing.h"
 
 int main(int argc, char** argv)
 {
-    Database* db = new Database("/Users/bison/Documents/Personal Projects/vectorDatabase/data/tryagain.db",1536);
+    Database* db = new Database("/Users/bison/Documents/Personal Projects/vectorDatabase/data/uyay.db",1536);
     std::cout.setf( std::ios_base::unitbuf );
     clock_t start = clock();
-//    for (int i = 0; i < 10000; i++) {
-//        if (i%10000 == 0){
-//            std::cout<<"Ten thousand inserts.\n";
-//        }
-//        Vec a = Eigen::VectorXf::Random(1536);
-//        db->insertVector(a,"");
-//    }
+    for (int i = 0; i < 2; i++) {
+        if (i%10000 == 0){
+            std::cout<<"Ten thousand inserts.\n";
+        }
+        Vec a = Eigen::VectorXf::Random(1536);
+        db->insertVector({"",a});
+    }
 
 //
     std::cout<<db->countVectors(0,70356);
     Vec search =  Eigen::VectorXf::Random(1536);
+    search = Eigen::VectorXf::Random(1536);
     search = search/search.norm();
     fetch_query_output output;
 
-    for (int i = 0; i < 1000; i ++){
+    for (int i = 0; i < 2; i ++){
         output = db->fetchNVectors(search,2);
+        std::cout<<"Dot product: "<<output.result[0].vector.transpose().dot(search);
     }
     std::cout<<convertToJsonFromOutput(output);
 

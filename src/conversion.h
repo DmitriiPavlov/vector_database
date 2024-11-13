@@ -2,8 +2,8 @@
 //builtin
 #include <string>
 //external
-#include <Eigen/Dense>
-#include <yyjson.h>
+#include "Eigen/Dense"
+#include "yyjson.h"
 //internal
 #include "types.h"
 
@@ -87,6 +87,4 @@ std::string convertToJsonFromOutput(const fetch_query_output& output){
     return json_str;
 }
 
-Vec convertToVecFromJSON(const std::string& vector){
 
-}
