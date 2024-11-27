@@ -9,6 +9,7 @@ add_executable(vectorDatabase main.cpp "${PROJECT_SOURCE_DIR}/external/sqlite-am
         src/conversion.h
         src/locality_hashing.h
         src/bindings.h
+        src/rng.h
 )
 
 include_directories("/Users/bison/Documents/Personal Projects/vectorDatabase/external/eigen-3.4.0")

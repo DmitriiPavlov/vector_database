@@ -1,6 +1,7 @@
 #pragma once
 //builtin
 #include <string>
+#include <bitset>
 //external
 #include "Eigen/Dense"
 #include "yyjson.h"
@@ -21,6 +22,12 @@ std::string convertToString(Vec vector){
             ss<<" ";
         }
     }
+    return ss.str();
+}
+
+std::string convertToString(uint16_t key){
+    std::stringstream ss;
+    ss<<std::bitset<16>(key);
     return ss.str();
 }
 

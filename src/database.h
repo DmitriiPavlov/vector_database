@@ -11,7 +11,7 @@
 #include "types.h"
 #include "conversion.h"
 #include "locality_hashing.h"
-
+#include "rng.h"
 #ifndef VECTORDATABASE_QUERIES_H
 #define VECTORDATABASE_QUERIES_H
 
@@ -122,7 +122,7 @@ public:
     }
 
     void putRandVector(){
-        Vec vector = Eigen::VectorXf::Random(_vector_size);
+        Vec vector = genRandVec(_vector_size);
         vector = vector/vector.norm();
         Vec normalized_vector = vector/vector.norm();
 
@@ -138,10 +138,11 @@ public:
         sqlite3_bind_int(count_vector_query.get(),2,maxKey);
         sqlite3_step(count_vector_query.get());
         int out = sqlite3_column_int(count_vector_query.get(),0);
+        sqlite3_reset(count_vector_query.get());
         return out;
     }
 
-    int countVectors(){
+    int countVectorsBinding(){
         return countVectors(0,65535);
     }
 
@@ -178,13 +179,56 @@ public:
             }
 
             if (queue.size() == N){
+                sqlite3_reset(query_wrapper.wrapped_query.get());
                 break;
             }
+            sqlite3_reset(query_wrapper.wrapped_query.get());
+        }
+//        if (queue.size() != N){
+//            while (sqlite3_step(select_all_vector_query.get()) == SQLITE_ROW){
+//                currRow = getRowFromStep(select_all_vector_query);
+//                currStruct = {currRow.vector.dot(queryVector),currRow};
+//                if (queue.size() == N){
+//                    if (queue.top().cosineIndex < currStruct.cosineIndex){
+//                        queue.pop();
+//                        queue.push(currStruct);
+//                    }
+//                }
+//                else{
+//                    queue.push(currStruct);
+//                }
+//            }
+//            sqlite3_reset(select_all_vector_query.get());
+//        }
+        bool success = (queue.size()==N);
+        for (int i = queue.size()-1; i >= 0; i--){
+            out_array[i] = (queue.top().row);
+            queue.top();
+            queue.pop();
         }
 
-        if (queue.size() != N){
-            while (sqlite3_step(select_all_vector_query.get()) == SQLITE_ROW){
-                currRow = getRowFromStep(select_all_vector_query);
+        return {success,out_array};
+    }
+
+    fetch_query_output fetchVectorsRandomWalk(const Vec & queryVector, int N){
+        Vec search;
+        std::priority_queue<SortHelperStruct, std::vector<SortHelperStruct>,HeapComparator> queue{};
+        std::vector<TableRow> out_array(N);
+        TableRow currRow;
+        SortHelperStruct currStruct;
+        for (int i = 0; i < 10; i++){
+            if (i !=0) {
+                search = (queryVector + genRandVec(1536)*0.5);
+            }
+            else{
+                search = queryVector;
+            }
+            search = search/search.norm();
+            uint16_t search_key = generateKey(search);
+            sqlite3_bind_int(select_16CN_vectors_query[0].get(),1,search_key);
+            sqlite3_step(select_16CN_vectors_query[0].get());
+            while (sqlite3_step(select_16CN_vectors_query[0].get()) == SQLITE_ROW){
+                currRow = getRowFromStep(select_16CN_vectors_query[0]);
                 currStruct = {currRow.vector.dot(queryVector),currRow};
                 if (queue.size() == N){
                     if (queue.top().cosineIndex < currStruct.cosineIndex){
@@ -196,7 +240,7 @@ public:
                     queue.push(currStruct);
                 }
             }
-            sqlite3_reset(select_all_vector_query.get());
+            sqlite3_reset(select_16CN_vectors_query[0].get());
         }
         bool success = (queue.size()==N);
         for (int i = queue.size()-1; i >= 0; i--){
@@ -204,9 +248,9 @@ public:
             queue.top();
             queue.pop();
         }
-
         return {success,out_array};
     }
+
 
     Vec ez_query(const Vec& queryVector){
         return fetchNVectors(queryVector,1).result[0].vector;
@@ -238,6 +282,27 @@ public:
         }
     }
 
+    uint16_t generateKey(Vec & v){
+        return hashVector(v,hashMatrix);
+    }
+
+    std::string getBitHashStr(Vec & v){
+        return convertToString(generateKey(v));
+    }
+
+    std::string compareBitHashStr(Vec& v1, Vec& v2){
+        return convertToString(generateKey(v1)^generateKey(v2));
+    }
+
+    int approxMedianBucketSize(){
+        const int partitionsize = 512;
+        double buckets[65536/partitionsize] = {};
+        for (int i = 0; i < 65356/partitionsize; i++){
+            buckets[i] = countVectors(partitionsize*i, partitionsize*(i+1)-1)/partitionsize;
+        }
+        std::sort(&buckets[0],&buckets[65536/partitionsize]);
+        return buckets[65536/(partitionsize*2)];
+    }
 
 private:
     void loadHashMatrix(){
@@ -269,18 +334,18 @@ private:
         easyQuery(create_metadata_table_query,NULL,NULL);
 
         std::string create_vectors_table_query = "CREATE TABLE IF NOT EXISTS vectors (\n"
-                                                  "    key INT NOT NULL,\n"
-                                                  "    vector BLOB NOT NULL,\n"
+                                                 "    key INT NOT NULL,\n"
+                                                 "    vector BLOB NOT NULL,\n"
                                                  "     metadata TEXT\n"
-                                                  ");";
+                                                 ");";
         easyQuery(create_vectors_table_query,NULL,NULL);
         easyQuery("CREATE INDEX IF NOT EXISTS idx_hash ON vectors(key);",NULL,NULL);
 
         std::string create_random_vectors_table_query = "CREATE TABLE IF NOT EXISTS random_vectors (\n"
-                                                 "    key INT,\n"
-                                                 "    vector TEXT NOT NULL,\n"
-                                                 "     metadata TEXT\n"
-                                                 ");";
+                                                        "    key INT,\n"
+                                                        "    vector TEXT NOT NULL,\n"
+                                                        "     metadata TEXT\n"
+                                                        ");";
         easyQuery(create_random_vectors_table_query,NULL,NULL);
 
         validateRandomVectorsTable();
@@ -362,7 +427,7 @@ private:
         initSqlQuery("SELECT COUNT(*) FROM vectors WHERE key>=? AND key<=?",count_vector_query);
 
         for (int i = 0; i < 4; i++){
-             create16CN_query(select_16CN_vectors_query[i], i);
+            create16CN_query(select_16CN_vectors_query[i], i);
         }
     }
 
@@ -399,4 +464,6 @@ private:
             op_variations_16CN[i] = generate_16CN_operations(ops,i);
         }
     }
+
+
 };
