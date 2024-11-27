@@ -3,7 +3,7 @@
 //builtin
 
 //external
-#include <Eigen/Dense>
+#include "Eigen/Dense"
 //internal
 #include "types.h"
 
@@ -26,8 +26,8 @@ Eigen::MatrixXf composeHashMatrix(std::vector<TableRow> data){
 
 uint16_t hashVector(const ColVec& v,const Eigen::MatrixXf& hash_matrix){
     ColVec column = hash_matrix*v;
-    int16_t result = 0;
-    for (int i = 0; i < column.size(); i++){
+    uint16_t result = 0;
+    for (int i = 0; i < 16; i++){
         if (column[i]>=0){
             result+=1;
         }
