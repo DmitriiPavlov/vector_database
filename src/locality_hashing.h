@@ -24,6 +24,14 @@ Eigen::MatrixXf composeHashMatrix(std::vector<TableRow> data){
     return out;
 }
 
+Eigen::MatrixXf composeHashMatrix(std::vector<Vec> data,int vector_size){
+    Eigen::MatrixXf out(16,vector_size);
+    for (int i = 0; i < data.size(); i++){
+        out.row(i) = data[i];
+    }
+    return out;
+}
+
 uint16_t hashVector(const ColVec& v,const Eigen::MatrixXf& hash_matrix){
     ColVec column = hash_matrix*v;
     uint16_t result = 0;
