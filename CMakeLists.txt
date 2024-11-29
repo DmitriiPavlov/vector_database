@@ -11,6 +11,7 @@ add_executable(vectorDatabase main.cpp "${PROJECT_SOURCE_DIR}/external/sqlite-am
         src/bindings.h
         src/rng.h
         src/sqlwrapper.h
+        src/client.h
 )
 
 include_directories("/Users/bison/Documents/Personal Projects/vectorDatabase/external/eigen-3.4.0")

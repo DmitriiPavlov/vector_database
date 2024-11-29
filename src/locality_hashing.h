@@ -24,8 +24,8 @@ Eigen::MatrixXf composeHashMatrix(std::vector<TableRow> data){
     return out;
 }
 
-Eigen::MatrixXf composeHashMatrix(std::vector<Vec> data,int vector_size){
-    Eigen::MatrixXf out(16,vector_size);
+Eigen::MatrixXf composeHashMatrix(const std::vector<Vec>& data,int vector_size,int random_vector_amount){
+    Eigen::MatrixXf out(random_vector_amount,vector_size);
     for (int i = 0; i < data.size(); i++){
         out.row(i) = data[i];
     }
