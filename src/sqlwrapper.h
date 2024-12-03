@@ -25,12 +25,15 @@ class InternalSQLWrapper{
     //on the fly
     sqlite3* db = nullptr;
     musqlite3_query insert_vector_query;
+    musqlite3_query insert_50_vector_query;
     std::vector<musqlite3_query> select_vector_queries;
+
 
 public:
     int _vector_size = -1;
     int _random_vector_amount = -1;
     int _key_count = -1;
+    const int _batch_size = 500;
     //this creates connection to sql database if file exists
     //throws error if file doesn't exist
     explicit InternalSQLWrapper(const std::string& filename, int vector_size, int random_vector_amount, int key_count){
@@ -76,6 +79,7 @@ public:
         sqlite3_reset(insert_vector_query.get());
     }
 
+
     //potentially slow, avoiding premature optimization
     std::vector<TableRow> select(int key, int keynum){
         std::vector<TableRow> out;
@@ -91,7 +95,7 @@ public:
         sqlite3_bind_int(select_vector_queries[keynum].get(),1,key);
     }
 
-    TableRow stepSelect(int key, int keynum){
+    TableRow stepSelect(int keynum){
         TableRow out;
         if (sqlite3_step(select_vector_queries[keynum].get())==SQLITE_ROW){
             out = getRowFromStep(keynum);
@@ -102,6 +106,9 @@ public:
         return out;
     }
 
+    void finishSelect(int keynum){
+        sqlite3_reset(select_vector_queries[keynum].get());
+    }
     //this is used to initialize the sql database, but doesn't create the connection
     static void init(std::string filename, int vector_size, int random_vector_amount, int key_count){
         sqlite3* temp_db = nullptr;
@@ -156,6 +163,13 @@ public:
             outVec.push_back(convertToVecFromBLOB(sqlite3_column_blob(query.get(),1),_vector_size));
         }
         return outVec;
+    }
+
+    int getTotalCount(){
+        musqlite3_query query;
+        initSqlQuery(db,std::string("SELECT COUNT(*) FROM vectors").c_str(),query);
+        sqlite3_step(query.get());
+        return sqlite3_column_int(query.get(),0);
     }
 
 private:
@@ -238,19 +252,31 @@ private:
             initSqlQuery(db, std::string("SELECT * FROM vectors WHERE key"+std::to_string(i)+"=?").c_str(), select_vector_queries[i]);
         }
 
-        std::string sql = "INSERT INTO vectors(";
+
+        std::string initial_sql = "INSERT INTO vectors(";
+        for (int i = 0; i < _key_count; i++){
+            initial_sql+="key"+std::to_string(i)+",";
+        }
+
+        initial_sql+= "vector,metadata)";
+        std::string values_sql = " VALUES(";
 
         for (int i = 0; i < _key_count; i++){
-            sql+="key"+std::to_string(i)+",";
+            values_sql+="?,";
         }
-        sql+= "vector,metadata) VALUES(";
+        values_sql += "?,?)";
 
-        for (int i = 0; i < _key_count; i++){
-            sql+="?,";
+        initSqlQuery(db,(initial_sql+values_sql).c_str(),insert_vector_query);
+
+        std::string batch_sql = initial_sql;
+        for (int i = 0; i < _batch_size; i++){
+            batch_sql += values_sql;
+            if (i!=_batch_size-1){
+                batch_sql+=",";
+            }
         }
-        sql += "?,?)";
+        initSqlQuery(db,batch_sql.c_str(),insert_50_vector_query);
 
-        initSqlQuery(db,sql.c_str(),insert_vector_query);
     }
 
 };
