@@ -17,7 +17,7 @@
 typedef Eigen::RowVectorXf Vec;
 typedef Eigen::VectorXf ColVec;
 struct TableRow{
-    int id;
+    bool valid = false;
     Vec vector;
     std::string metadata;
 };

@@ -6,60 +6,53 @@
 #include <Eigen/Dense>
 
 //internal
-#include "src/database.h"
-#include "src/conversion.h"
-#include "src/locality_hashing.h"
+#include "src/client.h"
 
-int main(int argc, char** argv)
-{
-    Database* db = new Database("/Users/bison/Documents/Personal Projects/vectorDatabase/data/westartanew.db",1536);
-    std::cout.setf( std::ios_base::unitbuf );
-//    for (int i = 0; i < 100000; i++) {
-//        if (i%10000 == 0){
-//            std::cout<<"Ten thousand inserts.\n";
+void test1(){
+    DatabaseClient db = DatabaseClient("/Users/bison/Documents/Personal Projects/vectorDatabase/datadifferentkeytest_20keys", 1536,20);
+//    for (int i = 0; i < 150000; i++){
+//        if (i%1000 == 0){
+//            std::cout<<i<<std::endl;
 //        }
-//        Vec a = genRandVec(db->_vector_size);
-//        db->insertVector({"",a});
+//        db.insertVector(genRandVec(1536),"");
 //    }
 
-    std::cout<<db->countVectorsBinding()<<"\n";
-    std::cout<<db->approxMedianBucketSize()<<"\n";
-
-//
-//    std::cout<<db->countVectors(0,70356);
-    Vec search =  Eigen::VectorXf::Random(1536);
-    search = genRandVec(1536);
-//    std::cout<<search;
-    search = search/search.norm();
-    fetch_query_output output;
-
-    clock_t start = clock();
-    Vec corrupted_search = search +  genRandVec(1536);
-    corrupted_search = corrupted_search/corrupted_search.norm();
-    std::cout<<db->getBitHashStr(corrupted_search)<<"\n";
-    std::cout<<db->getBitHashStr(search)<<"\n";
-    std::cout<<db->compareBitHashStr(search,corrupted_search)<<"\n";
-    std::cout<<search.dot(corrupted_search)<<"\n";
-    db->insertVector({"",corrupted_search});
-    for (int i = 0; i < 4000; i ++){
-        output = db->fetchNVectors(search,10);
+    Vec test_vectors[1000];
+    Vec corrupted_vectors[1000];
+    for (int i = 0; i < 100; i++){
+        test_vectors[i] = genRandVec(1536);
+        for (int j = 0; j < 10; j++){
+            corrupted_vectors[i] = test_vectors[i] + 1*genRandVec(1536);
+            corrupted_vectors[i] = corrupted_vectors[i]/corrupted_vectors[i].norm();
+            db.insertVector(corrupted_vectors[i],"");
+        }
     }
-    clock_t stop = clock();
-//    std::cout<<convertToJsonFromOutput(output)<<"\n";
-    std::cout<<output.result[0].vector.dot(search)<<"\n";
-    std::cout<<output.success<<"\n";
-    std::cout<<convertToString(db->generateKey(output.result[0].vector))<<"\n";
-    std::cout<<convertToString(db->generateKey(search))<<"\n";
-    insert_query_input trial = convertToInputFromJson("{\n"
-                                                      "    \"metadata\" : \"Trial Vec\",\n"
-                                                      "    \"vector\": [1.013,1.0141,0.41141]\n"
-                                                      "}",3);
 
-//    std::cout<<trial.vector<<"\n";
-//    std::cout<<trial.metadata;
+    db.syncBuffer();
+    std::cout<<db.total_vector_amount<<"\n";
 
-    double elapsed = (double) (stop - start) / CLOCKS_PER_SEC;
-    std::cout<<elapsed<<std::endl;
-    std::cout<<1000/elapsed<<std::endl;
-    free(db);
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < 100; i++){
+        auto result = db.fetchNVectors(test_vectors[i],1,-1.0f,true);
+    }
+    auto end = std::chrono::high_resolution_clock::now();
+
+    std::chrono::duration<double> duration = end - start;
+    std::cout << "Time taken: " << duration.count() << " seconds" << std::endl;
+    std::cout << "Average time taken: " << duration.count()/100 << " seconds" << std::endl;
+    std::cout<<100/duration.count()<<"\n";
+}
+
+void small_dataset_test(){
+    DatabaseClient db = DatabaseClient("/Users/bison/Documents/Personal Projects/vectorDatabase/data/whattup_pt19",1536,0);
+    for (int i = 0; i < 450; i++){
+        db.insertVector(genRandVec(1536),"1");
+    }
+    for (int i = 0; i < 100; i++){
+        auto result = db.fetchNVectors(genRandVec(1536),1,0.15f,true);
+    }
+}
+
+int main(int argc, char** argv) {
+    small_dataset_test();
 }
