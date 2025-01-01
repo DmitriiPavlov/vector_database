@@ -26,6 +26,7 @@ class InternalSQLWrapper{
     sqlite3* db = nullptr;
     musqlite3_query insert_vector_query;
     musqlite3_query insert_50_vector_query;
+    musqlite3_query select_all_query;
     std::vector<musqlite3_query> select_vector_queries;
 
 
@@ -62,6 +63,7 @@ public:
         _random_vector_amount = random_vector_amount;
         _key_count = key_count;
         initDynamicQueries();
+        initSqlQuery(db,"SELECT * FROM vectors", select_all_query);
     }
     //key datatype subject to change for flexibility
     void insert(const std::vector<int>& keys, const Vec& vector, const std::string& metadata){
@@ -85,7 +87,7 @@ public:
         std::vector<TableRow> out;
         sqlite3_bind_int(select_vector_queries[keynum].get(),1,key);
         while (sqlite3_step(select_vector_queries[keynum].get())==SQLITE_ROW){
-            out.push_back(getRowFromStep(keynum));
+            out.push_back(getRowFromStep(select_vector_queries[keynum]));
         }
         sqlite3_reset(select_vector_queries[keynum].get());
         return out;
@@ -95,10 +97,11 @@ public:
         sqlite3_bind_int(select_vector_queries[keynum].get(),1,key);
     }
 
+
     TableRow stepSelect(int keynum){
         TableRow out;
         if (sqlite3_step(select_vector_queries[keynum].get())==SQLITE_ROW){
-            out = getRowFromStep(keynum);
+            out = getRowFromStep(select_vector_queries[keynum]);
         }
         else{
             sqlite3_reset(select_vector_queries[keynum].get());
@@ -138,6 +141,21 @@ public:
         sqlite3_close_v2(temp_db);
     }
 
+    void beginAllSelect(){
+        sqlite3_reset(select_all_query.get());
+    }
+
+    TableRow stepAllSelect(){
+        TableRow out;
+        if (sqlite3_step(select_all_query.get())==SQLITE_ROW){
+            out = getRowFromStep(select_all_query);
+        }
+        else{
+            sqlite3_reset(select_all_query.get());
+        }
+        return out;
+    }
+
     static bool dbExists(const std::string& filename){
         return std::filesystem::exists(filename);
     }
@@ -148,7 +166,7 @@ public:
             query = nullptr;
         }
         insert_vector_query = nullptr;
-
+        select_all_query = nullptr;
         int error_code = sqlite3_close(db);
         if (error_code != SQLITE_OK){
             std::cout<<"Error closing database, "<<sqlite3_errstr(error_code);
@@ -216,10 +234,10 @@ private:
         }
     }
 
-    TableRow getRowFromStep(int keynum){
-        Vec v = convertToVecFromBLOB(sqlite3_column_blob(select_vector_queries[keynum].get(),_key_count),_vector_size);
+    TableRow getRowFromStep(const musqlite3_query& query){
+        Vec v = convertToVecFromBLOB(sqlite3_column_blob(query.get(),_key_count),_vector_size);
         std::string meta = "";
-        meta = std::string(reinterpret_cast<const char *>(sqlite3_column_text(select_vector_queries[keynum].get(), _key_count+1)));
+        meta = std::string(reinterpret_cast<const char *>(sqlite3_column_text(query.get(), _key_count+1)));
         TableRow new_row = {true,v,meta};
         return new_row;
     }

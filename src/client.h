@@ -1,6 +1,7 @@
 //external
 
 //builtin
+#include <chrono>
 
 //internal
 #include "sqlwrapper.h"
@@ -26,6 +27,12 @@ class DatabaseClient{
 public:
     //statistics variables
     int total_vector_amount = -1;
+
+    //search parameters, can be used if we want auto-optimization
+    float internal_min_threshold = -1.0f;
+    //in seconds
+    float desired_latency;
+    bool optimizing = false;
 
     //holy cursed logic that is necessary cause InternalSQLWrapper is immovable
     //potential fix is having the checks for whether file exists happen inside, but i dont like that solution
@@ -70,6 +77,12 @@ public:
         total_vector_amount++;
     }
 
+    void insertVector(const std::string& json_data){
+        auto pair = convertToInputFromJson(json_data,wrapper._vector_size);
+        wrapper.insert(pair.vector,pair.metadata);
+    }
+
+
     void syncBuffer(){
         std::vector<int> keys(wrapper._key_count);
         for (int i = 0; i < index; i++){
@@ -82,10 +95,8 @@ public:
         index = 0;
     }
 
-
-
-
-    std::vector<std::pair<TableRow,float>> fetchNVectors(const Vec& v,int n, float minthreshold){
+    std::vector<std::pair<TableRow,float>> fetchNVectors(const Vec& v,int n, float minthreshold, bool linearSearch){
+        syncBuffer();
         //sorted array
         std::vector<std::pair<TableRow,float>> output(n);
         Vec normalized_vector = v/v.norm();
@@ -117,41 +128,35 @@ public:
                 }
             }
         }
-
+        //we can run a linear search just to make sure its ok
+        if (linearSearch){
+            linearSearchHelper(output,v);
+        }
         return output;
     }
 
-    std::vector<std::pair<TableRow,float>> fetchNVectors_v2(const Vec& v,int n, float minthreshold){
-        //sorted array
-        std::vector<std::pair<TableRow,float>> output(n);
-        Vec normalized_vector = v/v.norm();
-        std::vector<uint16_t> keys(wrapper._key_count);
-        for (int i = 0; i < wrapper._key_count; i++){
-            keys[i] = hashVector(v,hashMatrices[i]);
-        }
 
-        for (const uint16_t& op: total_ops) {
-            for (int i = 0; i < keys.size(); i++) {
-                wrapper.beginSelect(keys[i] ^ op, i);
-                while (true) {
-                    TableRow row = wrapper.stepSelect( i);
-                    if (!row.valid) {
-                        break;
-                    }
-                    float dot = normalized_vector.dot(row.vector);
-                    if (dot > minthreshold){
-                        insertRow(std::pair(row, dot), output);
-                    }
-                }
-                if (output[n - 1].first.valid && output[n-1].second > minthreshold) {
-                    wrapper.finishSelect(i);
-                    return output;
-                }
-            }
+    std::vector<std::pair<TableRow,float>> fetchNVectorsAutoOptimized(const Vec& v, int n,bool linearsearch){
+        if (!optimizing){
+            return fetchNVectors(v,n,internal_min_threshold,false);
         }
-
-        return output;
+        else {
+            double derivative = computeDerivativeHelper(v,n,linearsearch);
+        }
     }
+
+
+    void setDesiredLatency(float latency){
+        desired_latency = latency;
+        optimizing = true;
+    }
+
+    std::string fetchNVectorsJSON(const Vec& v, int n, float minthreshold, bool linearSearch){
+        return convertToJsonFromOutput(fetchNVectors(v,n,minthreshold,linearSearch));
+    }
+
+
+
     ~DatabaseClient(){
         syncBuffer();
     }
@@ -167,6 +172,42 @@ private:
             }
         }
     }
+
+    //this should iterate through all the vectors in the database, and only get called for really tiny vector database sizes
+    //the basic idea is that if the user wants to search the database, and the amount of vectors that the algorithm has to look through
+    //is comparable to the total amount of the vectors in the database, then this should be invoked
+    void linearSearchHelper(std::vector<std::pair<TableRow,float>> & output,Vec v){
+        wrapper.beginAllSelect();
+        TableRow curr_row;
+        while (true){
+            curr_row = wrapper.stepAllSelect();
+            if (!curr_row.valid){
+                break;
+            }
+            else{
+                insertRow(std::pair<TableRow, float>(curr_row,curr_row.vector.dot(v)),output);
+            };
+        }
+    }
+
+    double computeDerivativeHelper(const Vec&v, int n, bool linearsearch){
+        std::vector<std::pair<TableRow,float>> result;
+        auto start = std::chrono::high_resolution_clock::now();
+        result = fetchNVectors(v,n,internal_min_threshold-0.01f,linearsearch);
+        auto end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double> duration = end - start;
+        double latency_a = duration.count();
+
+
+        start = std::chrono::high_resolution_clock::now();
+        result = fetchNVectors(v,n,internal_min_threshold+ 0.01f,linearsearch);
+        end = std::chrono::high_resolution_clock::now();
+        duration = end - start;
+        double latency_b = duration.count();
+
+        return (latency_b - latency_a)/(0.02f);
+    }
+
 };
 
 

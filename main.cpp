@@ -6,11 +6,9 @@
 #include <Eigen/Dense>
 
 //internal
-#include "src/database.h"
-#include "src/conversion.h"
-#include "src/locality_hashing.h"
 #include "src/client.h"
-int main(int argc, char** argv) {
+
+void test1(){
     DatabaseClient db = DatabaseClient("/Users/bison/Documents/Personal Projects/vectorDatabase/datadifferentkeytest_20keys", 1536,20);
 //    for (int i = 0; i < 150000; i++){
 //        if (i%1000 == 0){
@@ -35,7 +33,7 @@ int main(int argc, char** argv) {
 
     auto start = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < 100; i++){
-        auto result = db.fetchNVectors(test_vectors[i],1,-1.0f);
+        auto result = db.fetchNVectors(test_vectors[i],1,-1.0f,true);
     }
     auto end = std::chrono::high_resolution_clock::now();
 
@@ -43,4 +41,18 @@ int main(int argc, char** argv) {
     std::cout << "Time taken: " << duration.count() << " seconds" << std::endl;
     std::cout << "Average time taken: " << duration.count()/100 << " seconds" << std::endl;
     std::cout<<100/duration.count()<<"\n";
+}
+
+void small_dataset_test(){
+    DatabaseClient db = DatabaseClient("/Users/bison/Documents/Personal Projects/vectorDatabase/data/whattup_pt19",1536,0);
+    for (int i = 0; i < 450; i++){
+        db.insertVector(genRandVec(1536),"1");
+    }
+    for (int i = 0; i < 100; i++){
+        auto result = db.fetchNVectors(genRandVec(1536),1,0.15f,true);
+    }
+}
+
+int main(int argc, char** argv) {
+    small_dataset_test();
 }

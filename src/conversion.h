@@ -66,20 +66,20 @@ insert_query_input convertToInputFromJson(const std::string& json, int size){
     return out;
 }
 
-std::string convertToJsonFromOutput(const fetch_query_output& output){
+std::string convertToJsonFromOutput(const std::vector<std::pair<TableRow,float>>& output){
     yyjson_mut_doc *doc = yyjson_mut_doc_new(NULL);
     yyjson_mut_val *root = yyjson_mut_obj(doc);
     yyjson_mut_doc_set_root(doc, root);
 
-    yyjson_mut_obj_add_str(doc, root, "success", output.success ? "true" : "false");
+    yyjson_mut_obj_add_str(doc, root, "success", output[output.size()-1].first.valid ? "true" : "false");
 
     yyjson_mut_val* output_array = yyjson_mut_arr(doc);
-    for (const TableRow& r : output.result){
+    for (const auto pair : output){
         yyjson_mut_val* row = yyjson_mut_obj(doc);
-        yyjson_mut_obj_add_str(doc,row,"metadata",r.metadata.c_str());
+        yyjson_mut_obj_add_str(doc,row,"metadata",pair.first.metadata.c_str());
 
         yyjson_mut_val* vector_array = yyjson_mut_arr(doc);
-        for (const float& val : r.vector) {
+        for (const float& val : pair.first.vector) {
             yyjson_mut_arr_add_float(doc,vector_array,val);
         }
         yyjson_mut_obj_add_val(doc, row, "vector", vector_array);
